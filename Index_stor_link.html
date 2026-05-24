@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Store Link Tool — GMT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            colors: { primary: '#C41230', light: '#F5F5F5', dark: '#111111' },
+            fontFamily: { sans: ['Tajawal','sans-serif'] }
+        }
+    }
+}
+</script>
+<style>
+:root { --red:#C41230; --red-light:#FEF0F0; --green:#16a34a; --green-light:#f0fdf4; --bg:#F7F7F8; --white:#fff; --border:#EBEBEB; --text:#111; --muted:#888; }
+*{box-sizing:border-box;}
+body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);margin:0;min-height:100vh;-webkit-tap-highlight-color:transparent;}
+.hide-scroll::-webkit-scrollbar{display:none;} .hide-scroll{-ms-overflow-style:none;scrollbar-width:none;}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .28s;}
+.modal-overlay.active{opacity:1;pointer-events:auto;}
+.modal-sheet{background:#fff;width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:24px 20px 36px;transform:translateY(30px);transition:transform .3s cubic-bezier(.32,.72,0,1);}
+.modal-overlay.active .modal-sheet{transform:translateY(0);}
+
+/* ── CHIP ── */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .18s;user-select:none;background:#F5F5F5;color:#555;white-space:nowrap;}
+.chip.active{border-color:rgba(196,18,48,.25);background:var(--red-light);color:var(--red);}
+.chip.linked{background:var(--green-light);color:var(--green);border-color:rgba(22,163,74,.2);}
+.chip.linked.active{background:var(--green-light);color:var(--green);border-color:rgba(22,163,74,.5);}
+.chip:hover{background:#eee;} .chip.active:hover{background:#fde8eb;} .chip.linked:hover{background:#dcfce7;}
+
+/* ── PRODUCT ROW ── */
+.prod-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:#fff;border:1.5px solid var(--border);transition:all .2s;cursor:pointer;}
+.prod-row:hover{border-color:#ddd;box-shadow:0 3px 12px rgba(0,0,0,.07);}
+.prod-row.has-url{border-color:rgba(22,163,74,.2);background:var(--green-light);}
+.prod-img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:#f5f5f5;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.prod-img img{width:100%;height:100%;object-fit:cover;}
+
+/* ── URL INPUT ── */
+.url-input-wrap{display:flex;align-items:center;gap:8px;background:#F5F5F5;border:1.5px solid #e5e7eb;border-radius:12px;padding:4px 4px 4px 14px;transition:border .2s;}
+.url-input-wrap:focus-within{border-color:var(--red);background:#fff;box-shadow:0 0 0 3px rgba(196,18,48,.08);}
+.url-input-wrap input{flex:1;background:transparent;border:none;outline:none;font-size:13px;font-family:'Tajawal',sans-serif;color:#111;padding:8px 0;direction:ltr;text-align:left;}
+.url-input-wrap input::placeholder{color:#bbb;direction:rtl;text-align:right;}
+
+/* ── BUTTONS ── */
+.btn-primary{background:var(--red);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:14px;font-weight:700;font-family:'Tajawal',sans-serif;cursor:pointer;transition:background .2s;width:100%;}
+.btn-primary:hover{background:#a50f28;} .btn-primary:active{transform:scale(.98);}
+.btn-secondary{background:#F5F5F5;color:#555;border:none;border-radius:12px;padding:12px 0;font-size:14px;font-weight:600;font-family:'Tajawal',sans-serif;cursor:pointer;transition:background .2s;width:100%;}
+.btn-secondary:hover{background:#ebebeb;}
+.btn-icon{width:34px;height:34px;border-radius:9px;border:none;background:#F5F5F5;color:#666;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s;flex-shrink:0;}
+.btn-icon:hover{background:#e8e8e8;} .btn-icon.green{background:var(--green-light);color:var(--green);} .btn-icon.green:hover{background:#bbf7d0;}
+.btn-icon.red-soft{background:var(--red-light);color:var(--red);} .btn-icon.red-soft:hover{background:#fde8eb;}
+
+/* ── PROGRESS BAR ── */
+.progress-track{height:5px;background:#e5e7eb;border-radius:9999px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--red),#ff6b6b);border-radius:9999px;transition:width .5s ease;}
+
+/* ── STATUS DOT ── */
+.dot-linked{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;}
+.dot-unlinked{width:8px;height:8px;border-radius:50%;background:#d1d5db;flex-shrink:0;}
+
+/* ── INLINE EDIT ── */
+.inline-url{border:none;background:transparent;font-size:11px;color:var(--green);font-family:'Tajawal',sans-serif;outline:none;width:100%;direction:ltr;text-align:left;cursor:text;}
+.inline-url:hover{text-decoration:underline;}
+
+/* ── TOAST ── */
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
+#toast.show{opacity:1;}
+
+/* ── SKELETON ── */
+.skeleton{background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:12px;}
+@keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+
+/* ── OPEN LINK ANIM ── */
+@keyframes pop{0%{transform:scale(1);}50%{transform:scale(1.2);}100%{transform:scale(1);}}</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<header style="background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:36px;height:36px;background:linear-gradient(135deg,#16a34a,#22c55e);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px rgba(22,163,74,.35);">
+            <i class="ph-fill ph-storefront" style="color:#fff;font-size:18px;"></i>
+        </div>
+        <div>
+            <div style="font-size:16px;font-weight:800;line-height:1.2;">Store Link Tool</div>
+            <div style="font-size:11px;color:#888;font-weight:500;">ربط الجرد بالمتجر الإلكتروني</div>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+        <div id="save-indicator" style="display:none;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--green);">
+            <div style="width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 1s infinite;"></div>
+            يحفظ...
+        </div>
+        <button class="btn-icon" id="refresh-btn" onclick="reload()" title="تحديث">
+            <i class="ph ph-arrow-clockwise" style="font-size:16px;"></i>
+        </button>
+    </div>
+</header>
+
+<!-- ══ PROGRESS SECTION ══ -->
+<div style="background:#fff;border-bottom:1px solid var(--border);padding:14px 20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;color:#555;">تقدم الربط</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:var(--green);font-weight:700;" id="prog-linked">— مرتبط</span>
+            <span style="font-size:12px;color:#aaa;" id="prog-total">من —</span>
+        </div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="prog-bar" style="width:0%"></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <span style="font-size:10px;color:#aaa;" id="prog-pct">0%</span>
+        <span style="font-size:10px;color:#aaa;" id="prog-remaining">— غير مرتبط</span>
+    </div>
+</div>
+
+<!-- ══ STATS ══ -->
+<div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 20px;display:flex;gap:16px;overflow-x:auto;" class="hide-scroll">
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div style="width:28px;height:28px;background:var(--green-light);border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph-fill ph-link" style="color:var(--green);font-size:13px;"></i>
+        </div>
+        <div><div id="stat-linked" style="font-size:15px;font-weight:800;line-height:1;">—</div><div style="font-size:10px;color:#888;">مرتبط</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div style="width:28px;height:28px;background:#FFF7ED;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph ph-link-break" style="color:#f59e0b;font-size:13px;"></i>
+        </div>
+        <div><div id="stat-unlinked" style="font-size:15px;font-weight:800;line-height:1;">—</div><div style="font-size:10px;color:#888;">غير مرتبط</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div style="width:28px;height:28px;background:#EFF6FF;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph ph-package" style="color:#3b82f6;font-size:13px;"></i>
+        </div>
+        <div><div id="stat-total" style="font-size:15px;font-weight:800;line-height:1;">—</div><div style="font-size:10px;color:#888;">إجمالي</div></div>
+    </div>
+</div>
+
+<!-- ══ FILTER + SEARCH ══ -->
+<div style="background:#fff;border-bottom:1px solid var(--border);">
+    <div style="padding:10px 16px 0;display:flex;gap:8px;overflow-x:auto;" class="hide-scroll">
+        <div class="chip active" id="f-all"      onclick="setFilter('all')"><i class="ph ph-funnel"></i> الكل</div>
+        <div class="chip linked" id="f-linked"   onclick="setFilter('linked')"><i class="ph ph-link"></i> مرتبط</div>
+        <div class="chip" id="f-unlinked"        onclick="setFilter('unlinked')"><i class="ph ph-link-break"></i> غير مرتبط</div>
+    </div>
+    <!-- Group sub-filter -->
+    <div style="padding:8px 16px 10px;display:flex;gap:6px;overflow-x:auto;" class="hide-scroll" id="group-filter-bar">
+        <div class="chip active" id="gf-all" onclick="setGroupFilter('')" style="font-size:11px;padding:4px 10px;">كل المجموعات</div>
+    </div>
+    <!-- Search -->
+    <div style="padding:0 16px 10px;">
+        <div style="display:flex;align-items:center;gap:10px;background:#F5F5F5;border-radius:12px;padding:9px 14px;">
+            <i class="ph ph-magnifying-glass" style="color:#aaa;font-size:16px;flex-shrink:0;"></i>
+            <input type="text" id="search-input" placeholder="ابحث عن منتج أو رابط..." oninput="onSearch(this.value)"
+                style="border:none;background:transparent;padding:0;margin:0;font-size:13px;flex:1;font-family:'Tajawal',sans-serif;outline:none;color:#111;">
+        </div>
+    </div>
+</div>
+
+<!-- ══ MAIN LIST ══ -->
+<main style="padding:12px 16px 100px;" id="main-list">
+    <div id="products-container" style="display:flex;flex-direction:column;gap:8px;"></div>
+</main>
+
+<!-- ══ FAB: BULK ADD ══ -->
+<div style="position:fixed;bottom:24px;left:0;right:0;display:flex;justify-content:center;z-index:50;pointer-events:none;">
+    <div style="pointer-events:auto;display:flex;gap:10px;">
+        <button onclick="openBulkModal()" style="background:#fff;color:#555;border:1.5px solid var(--border);border-radius:999px;padding:12px 22px;font-size:13px;font-weight:700;font-family:'Tajawal',sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.12);cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .2s;">
+            <i class="ph ph-list-checks" style="font-size:16px;"></i>
+            إضافة جماعية
+        </button>
+        <button onclick="openQuickAdd()" style="background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:999px;padding:12px 22px;font-size:13px;font-weight:700;font-family:'Tajawal',sans-serif;box-shadow:0 6px 20px rgba(22,163,74,.4);cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .2s;">
+            <i class="ph ph-link" style="font-size:16px;"></i>
+            ربط سريع
+        </button>
+    </div>
+</div>
+
+<!-- ══ LINK MODAL (single product) ══ -->
+<div class="modal-overlay" id="link-modal">
+    <div class="modal-sheet">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:20px;">
+            <div class="prod-img" id="lm-img" style="width:52px;height:52px;border-radius:12px;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+                <div id="lm-name" style="font-size:15px;font-weight:800;line-height:1.3;"></div>
+                <div id="lm-meta" style="font-size:12px;color:#888;margin-top:3px;"></div>
+            </div>
+            <button class="btn-icon" onclick="closeModal('link-modal')"><i class="ph ph-x"></i></button>
+        </div>
+
+        <!-- Current URL preview if exists -->
+        <div id="lm-current" style="display:none;background:var(--green-light);border:1.5px solid rgba(22,163,74,.2);border-radius:12px;padding:10px 14px;margin-bottom:14px;display:none;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+                    <i class="ph-fill ph-link" style="color:var(--green);font-size:14px;flex-shrink:0;"></i>
+                    <a id="lm-current-url" href="#" target="_blank" style="font-size:11px;color:var(--green);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;" onclick="trackOpen(event)"></a>
+                </div>
+                <button onclick="openCurrentLink()" class="btn-icon green" style="width:28px;height:28px;border-radius:7px;" title="فتح الرابط">
+                    <i class="ph ph-arrow-square-out" style="font-size:13px;"></i>
+                </button>
+            </div>
+        </div>
+
+        <label style="font-size:12px;font-weight:700;color:#555;display:block;margin-bottom:8px;">رابط المنتج في المتجر</label>
+        <div class="url-input-wrap">
+            <input type="url" id="lm-url-input" placeholder="https://متجرك.com/products/..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <button class="btn-icon" onclick="pasteUrl()" title="لصق" style="width:36px;height:36px;background:#f0f0f0;">
+                <i class="ph ph-clipboard-text" style="font-size:16px;"></i>
+            </button>
+        </div>
+
+        <!-- Quick domain chips -->
+        <div id="domain-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;"></div>
+
+        <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="btn-primary" onclick="saveLink()" style="background:linear-gradient(135deg,#16a34a,#22c55e);">
+                <i class="ph ph-link" style="font-size:15px;margin-left:6px;"></i>حفظ الرابط
+            </button>
+            <button class="btn-secondary" onclick="removeLink()" id="lm-remove-btn" style="display:none;width:auto;padding:0 18px;flex-shrink:0;color:#ef4444;">
+                <i class="ph ph-trash" style="font-size:15px;"></i>
+            </button>
+            <button class="btn-secondary" onclick="closeModal('link-modal')" style="flex:none;width:auto;padding:0 18px;">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ QUICK ADD MODAL ══ -->
+<div class="modal-overlay" id="quick-modal">
+    <div class="modal-sheet">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <h3 style="font-size:16px;font-weight:800;margin:0;">ربط سريع</h3>
+            <button class="btn-icon" onclick="closeModal('quick-modal')"><i class="ph ph-x"></i></button>
+        </div>
+        <p style="font-size:13px;color:#888;margin:0 0 14px;">ابحث عن منتج وأضف رابطه بسرعة.</p>
+        <div style="display:flex;align-items:center;gap:10px;background:#F5F5F5;border-radius:12px;padding:9px 14px;margin-bottom:12px;">
+            <i class="ph ph-magnifying-glass" style="color:#aaa;font-size:16px;flex-shrink:0;"></i>
+            <input type="text" id="quick-search" placeholder="اسم المنتج..." oninput="filterQuickList(this.value)"
+                style="border:none;background:transparent;padding:0;margin:0;font-size:13px;flex:1;font-family:'Tajawal',sans-serif;outline:none;color:#111;">
+        </div>
+        <div id="quick-list" style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;" class="hide-scroll"></div>
+    </div>
+</div>
+
+<!-- ══ BULK MODAL ══ -->
+<div class="modal-overlay" id="bulk-modal">
+    <div class="modal-sheet">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <h3 style="font-size:16px;font-weight:800;margin:0;">إضافة جماعية</h3>
+            <button class="btn-icon" onclick="closeModal('bulk-modal')"><i class="ph ph-x"></i></button>
+        </div>
+        <p style="font-size:13px;color:#666;margin:0 0 14px;line-height:1.6;">أدخل الروابط بالترتيب: كل سطر = منتج واحد.<br>الصيغة: <span style="font-family:monospace;background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:12px;">اسم_المنتج | الرابط</span></p>
+        <textarea id="bulk-input" placeholder="كاميرا Canon EOS R5 | https://store.com/canon-r5&#10;عدسة 50mm | https://store.com/lens-50mm" style="width:100%;height:140px;background:#F5F5F5;border:1.5px solid transparent;border-radius:12px;padding:12px 14px;font-size:12px;font-family:monospace;resize:none;outline:none;transition:border .2s;direction:ltr;" onfocus="this.style.borderColor='var(--red)'" onblur="this.style.borderColor='transparent'"></textarea>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+            <button class="btn-primary" onclick="applyBulk()" style="background:linear-gradient(135deg,#16a34a,#22c55e);">تطبيق</button>
+            <button class="btn-secondary" onclick="closeModal('bulk-modal')">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+<style>@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}</style>
+
+<script>
+// ══════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════
+const CFG = {
+    SUPABASE_URL: 'https://ysawzwtmodkqqbqoiojj.supabase.co',
+    SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzYXd6d3Rtb2RrcXFicW9pb2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NjI0OTUsImV4cCI6MjA5MjAzODQ5NX0.g-dBDpHzMsP_0IQAKFxzWkKzc_I13bGUMeYNgcUmrKQ',
+    TABLE: 'products'
+};
+
+let _sb = null;
+let allProducts  = [];
+let currentFilter = 'all';
+let currentGroupFilter = '';
+let searchQ = '';
+
+// Link modal state
+let _lmProductId = null;
+
+// Domain history (locally remembered)
+let knownDomains = JSON.parse(localStorage.getItem('gmt_known_domains') || '[]');
+
+// ── INIT ──
+function initSB() {
+    _sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
+}
+
+// ══════════════════════════════════════
+// DATA
+// ══════════════════════════════════════
+async function fetchProducts() {
+    if (!_sb) initSB();
+    try {
+        const { data, error } = await _sb.from(CFG.TABLE)
+            .select('id, name, image_url, group_name, price, barcode, store_url')
+            .order('name');
+        if (error) throw error;
+        return data || [];
+    } catch(e) {
+        showToast('خطأ في تحميل البيانات', 'error');
+        return [];
+    }
+}
+
+async function updateStoreUrl(productId, url) {
+    if (!_sb) initSB();
+    const { error } = await _sb.from(CFG.TABLE).update({ store_url: url || null }).eq('id', productId);
+    if (error) throw error;
+}
+
+// ══════════════════════════════════════
+// LOAD & STATS
+// ══════════════════════════════════════
+async function load() {
+    renderSkeleton();
+    allProducts = await fetchProducts();
+    updateStats();
+    buildGroupFilter();
+    renderList();
+}
+
+async function reload() {
+    const btn = document.getElementById('refresh-btn');
+    btn.querySelector('i').style.animation = 'spin 0.6s linear';
+    allProducts = await fetchProducts();
+    updateStats();
+    buildGroupFilter();
+    renderList();
+    setTimeout(() => btn.querySelector('i').style.animation = '', 700);
+}
+
+function renderSkeleton() {
+    document.getElementById('products-container').innerHTML = [1,2,3,4].map(() =>
+        `<div class="skeleton" style="height:68px;border-radius:14px;"></div>`
+    ).join('');
+}
+
+function updateStats() {
+    const linked   = allProducts.filter(p => p.store_url).length;
+    const unlinked = allProducts.length - linked;
+    const pct      = allProducts.length ? Math.round(linked / allProducts.length * 100) : 0;
+
+    document.getElementById('stat-linked').textContent   = linked;
+    document.getElementById('stat-unlinked').textContent = unlinked;
+    document.getElementById('stat-total').textContent    = allProducts.length;
+    document.getElementById('prog-linked').textContent   = linked + ' مرتبط';
+    document.getElementById('prog-total').textContent    = 'من ' + allProducts.length;
+    document.getElementById('prog-bar').style.width      = pct + '%';
+    document.getElementById('prog-pct').textContent      = pct + '%';
+    document.getElementById('prog-remaining').textContent = unlinked + ' غير مرتبط';
+}
+
+function buildGroupFilter() {
+    const groups = [...new Set(allProducts.map(p => p.group_name || '').filter(Boolean))].sort();
+    const bar = document.getElementById('group-filter-bar');
+    bar.innerHTML = `<div class="chip active" id="gf-all" onclick="setGroupFilter('')" style="font-size:11px;padding:4px 10px;">كل المجموعات</div>` +
+        groups.map(g => {
+            const count = allProducts.filter(p => p.group_name === g).length;
+            return `<div class="chip${currentGroupFilter===g?' active':''}" onclick="setGroupFilter('${esc(g)}')" style="font-size:11px;padding:4px 10px;">${esc(g)} <span style="background:rgba(0,0,0,.08);border-radius:99px;padding:1px 6px;font-size:10px;">${count}</span></div>`;
+        }).join('');
+}
+
+// ══════════════════════════════════════
+// FILTERS
+// ══════════════════════════════════════
+function setFilter(f) {
+    currentFilter = f;
+    ['all','linked','unlinked'].forEach(id => document.getElementById('f-'+id)?.classList.toggle('active', id===f));
+    renderList();
+}
+
+function setGroupFilter(g) {
+    currentGroupFilter = g;
+    document.querySelectorAll('#group-filter-bar .chip').forEach(c => c.classList.remove('active'));
+    if (!g) document.getElementById('gf-all')?.classList.add('active');
+    else document.querySelectorAll('#group-filter-bar .chip').forEach(c => { if (c.textContent.trim().startsWith(g)) c.classList.add('active'); });
+    renderList();
+}
+
+function onSearch(q) {
+    searchQ = q.trim().toLowerCase();
+    renderList();
+}
+
+// ══════════════════════════════════════
+// RENDER LIST
+// ══════════════════════════════════════
+function renderList() {
+    let items = [...allProducts];
+    if (searchQ)           items = items.filter(p => (p.name||'').toLowerCase().includes(searchQ) || (p.store_url||'').toLowerCase().includes(searchQ) || (p.barcode||'').includes(searchQ));
+    if (currentFilter === 'linked')   items = items.filter(p => !!p.store_url);
+    if (currentFilter === 'unlinked') items = items.filter(p => !p.store_url);
+    if (currentGroupFilter)           items = items.filter(p => p.group_name === currentGroupFilter);
+
+    const container = document.getElementById('products-container');
+    if (!items.length) {
+        container.innerHTML = `<div style="text-align:center;padding:48px 20px;color:#aaa;"><i class="ph ph-package" style="font-size:48px;display:block;margin-bottom:12px;opacity:.4;"></i>لا توجد نتائج</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(p => {
+        const hasUrl = !!p.store_url;
+        return `
+        <div class="prod-row${hasUrl?' has-url':''}" onclick="openLinkModal('${esc(String(p.id))}')">
+            <div class="prod-img">
+                ${p.image_url ? `<img src="${p.image_url}" alt="">` : `<i class="ph ph-package" style="font-size:20px;color:#ccc;"></i>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.name||'—')}</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+                    ${p.group_name ? `<span style="background:var(--red-light);color:var(--red);border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;">${esc(p.group_name)}</span>` : ''}
+                    ${hasUrl
+                        ? `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">
+                                <i class="ph-fill ph-link" style="font-size:11px;flex-shrink:0;"></i>
+                                <span style="overflow:hidden;text-overflow:ellipsis;direction:ltr;">${esc(getDomain(p.store_url))}</span>
+                           </span>`
+                        : `<span style="font-size:11px;color:#ccc;">لا يوجد رابط</span>`
+                    }
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+                ${hasUrl ? `
+                    <button class="btn-icon green" onclick="event.stopPropagation();openUrl('${esc(p.store_url)}')" title="فتح في المتجر" style="width:32px;height:32px;border-radius:8px;">
+                        <i class="ph ph-arrow-square-out" style="font-size:15px;"></i>
+                    </button>` : ''}
+                <div class="${hasUrl?'dot-linked':'dot-unlinked'}"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function getDomain(url) {
+    try { return new URL(url).hostname.replace('www.',''); } catch { return url; }
+}
+
+// ══════════════════════════════════════
+// LINK MODAL
+// ══════════════════════════════════════
+function openLinkModal(productId) {
+    const prod = allProducts.find(p => String(p.id) === String(productId));
+    if (!prod) return;
+    _lmProductId = prod.id;
+
+    // Populate
+    const imgDiv = document.getElementById('lm-img');
+    imgDiv.innerHTML = prod.image_url
+        ? `<img src="${prod.image_url}" alt="" style="width:100%;height:100%;object-fit:cover;">`
+        : `<i class="ph ph-package" style="font-size:22px;color:#ccc;"></i>`;
+    document.getElementById('lm-name').textContent = prod.name || '—';
+    document.getElementById('lm-meta').textContent = [prod.price ? prod.price+'$' : '', prod.barcode || '', prod.group_name || ''].filter(Boolean).join(' · ');
+    document.getElementById('lm-url-input').value = prod.store_url || '';
+
+    // Current URL display
+    const curWrap = document.getElementById('lm-current');
+    if (prod.store_url) {
+        curWrap.style.display = 'flex';
+        const a = document.getElementById('lm-current-url');
+        a.href = prod.store_url;
+        a.textContent = prod.store_url;
+        document.getElementById('lm-remove-btn').style.display = '';
+    } else {
+        curWrap.style.display = 'none';
+        document.getElementById('lm-remove-btn').style.display = 'none';
+    }
+
+    // Domain chips
+    renderDomainChips(prod.store_url || '');
+
+    openModal('link-modal');
+    setTimeout(() => document.getElementById('lm-url-input').focus(), 300);
+}
+
+function renderDomainChips(currentUrl) {
+    // Extract domains from existing products + known domains
+    const allDomains = [...new Set([
+        ...allProducts.filter(p => p.store_url).map(p => { try { return new URL(p.store_url).origin; } catch { return ''; } }).filter(Boolean),
+        ...knownDomains
+    ])];
+    const wrap = document.getElementById('domain-chips');
+    if (!allDomains.length) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = allDomains.slice(0,5).map(d =>
+        `<div onclick="prefillDomain('${esc(d)}')" style="padding:4px 10px;background:#f5f5f5;border-radius:7px;font-size:11px;color:#555;cursor:pointer;border:1px solid #e5e7eb;font-family:monospace;transition:all .15s;" onmouseover="this.style.background='#ebebeb'" onmouseout="this.style.background='#f5f5f5'">${esc(d.replace('https://','').replace('www.',''))}</div>`
+    ).join('');
+}
+
+function prefillDomain(domain) {
+    const input = document.getElementById('lm-url-input');
+    if (!input.value) input.value = domain + '/';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+}
+
+async function pasteUrl() {
+    try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('lm-url-input').value = text;
+    } catch {
+        showToast('لا يمكن الوصول للحافظة — الصق يدوياً', 'error');
+    }
+}
+
+async function saveLink() {
+    const url = document.getElementById('lm-url-input').value.trim();
+    if (url && !isValidUrl(url)) { showToast('الرابط غير صحيح — يجب أن يبدأ بـ https://', 'error'); return; }
+
+    showSaving();
+    closeModal('link-modal');
+    try {
+        await updateStoreUrl(_lmProductId, url);
+        const prod = allProducts.find(p => p.id === _lmProductId);
+        if (prod) prod.store_url = url || null;
+
+        // Remember domain
+        if (url) {
+            try {
+                const origin = new URL(url).origin;
+                if (!knownDomains.includes(origin)) {
+                    knownDomains.unshift(origin);
+                    knownDomains = knownDomains.slice(0, 8);
+                    localStorage.setItem('gmt_known_domains', JSON.stringify(knownDomains));
+                }
+            } catch {}
+        }
+        showToast(url ? 'تم حفظ الرابط ✓' : 'تم حذف الرابط ✓');
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+    updateStats();
+    renderList();
+}
+
+async function removeLink() {
+    showSaving();
+    closeModal('link-modal');
+    try {
+        await updateStoreUrl(_lmProductId, '');
+        const prod = allProducts.find(p => p.id === _lmProductId);
+        if (prod) prod.store_url = null;
+        showToast('تم حذف الرابط ✓');
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+    updateStats();
+    renderList();
+}
+
+function openCurrentLink() {
+    const prod = allProducts.find(p => p.id === _lmProductId);
+    if (prod?.store_url) openUrl(prod.store_url);
+}
+
+function openUrl(url) {
+    window.open(url, '_blank', 'noopener');
+}
+
+function trackOpen(e) {
+    // Just let default href behavior work
+}
+
+function isValidUrl(url) {
+    try { const u = new URL(url); return u.protocol === 'https:' || u.protocol === 'http:'; }
+    catch { return false; }
+}
+
+// ══════════════════════════════════════
+// QUICK ADD MODAL
+// ══════════════════════════════════════
+function openQuickAdd() {
+    document.getElementById('quick-search').value = '';
+    filterQuickList('');
+    openModal('quick-modal');
+    setTimeout(() => document.getElementById('quick-search').focus(), 300);
+}
+
+function filterQuickList(q) {
+    const sq = q.trim().toLowerCase();
+    let items = allProducts.filter(p => !p.store_url); // unlinked by default
+    if (sq) items = allProducts.filter(p => (p.name||'').toLowerCase().includes(sq));
+
+    const container = document.getElementById('quick-list');
+    if (!items.length) {
+        container.innerHTML = `<div style="text-align:center;padding:28px;color:#aaa;font-size:13px;">🎉 كل المنتجات مرتبطة!</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(p => `
+        <div class="prod-row${p.store_url?' has-url':''}" onclick="closeModal('quick-modal');setTimeout(()=>openLinkModal('${esc(String(p.id))}'),200);">
+            <div class="prod-img">
+                ${p.image_url ? `<img src="${p.image_url}" alt="">` : `<i class="ph ph-package" style="font-size:18px;color:#ccc;"></i>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.name||'—')}</div>
+                <div style="font-size:11px;color:#aaa;margin-top:2px;">${p.price ? p.price+'$' : ''}</div>
+            </div>
+            <div class="${p.store_url?'dot-linked':'dot-unlinked'}"></div>
+        </div>
+    `).join('');
+}
+
+// ══════════════════════════════════════
+// BULK MODAL
+// ══════════════════════════════════════
+function openBulkModal() {
+    document.getElementById('bulk-input').value = '';
+    openModal('bulk-modal');
+    setTimeout(() => document.getElementById('bulk-input').focus(), 300);
+}
+
+async function applyBulk() {
+    const raw = document.getElementById('bulk-input').value.trim();
+    if (!raw) { showToast('يرجى إدخال البيانات', 'error'); return; }
+
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    let matched = 0, skipped = 0;
+    closeModal('bulk-modal');
+    showSaving();
+
+    for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length < 2) { skipped++; continue; }
+        const name = parts[0].trim();
+        const url  = parts[parts.length-1].trim();
+        if (!isValidUrl(url)) { skipped++; continue; }
+        // Find matching product (fuzzy)
+        const prod = allProducts.find(p => (p.name||'').toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes((p.name||'').toLowerCase()));
+        if (!prod) { skipped++; continue; }
+        try {
+            await updateStoreUrl(prod.id, url);
+            prod.store_url = url;
+            matched++;
+        } catch { skipped++; }
+    }
+
+    hideSaving();
+    showToast(`تم ربط ${matched} منتج${skipped ? ` (${skipped} لم يُطابق)` : ''} ✓`);
+    updateStats();
+    renderList();
+}
+
+// ══════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════
+function openModal(id)  { document.getElementById(id)?.classList.add('active'); document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id)?.classList.remove('active'); document.body.style.overflow=''; }
+function showSaving()   { document.getElementById('save-indicator').style.display = 'flex'; }
+function hideSaving()   { document.getElementById('save-indicator').style.display = 'none'; }
+function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = type==='error' ? '#ef4444' : '#111';
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+function esc(str) {
+    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+    initSB();
+    await load();
+});
+</script>
+<style>
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+</style>
+</body>
+</html>

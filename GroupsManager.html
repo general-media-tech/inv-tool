@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Groups Manager — GMT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            colors: { primary: '#C41230', light: '#F5F5F5', dark: '#111111' },
+            fontFamily: { sans: ['Tajawal','sans-serif'] },
+            boxShadow: { soft: '0 4px 20px rgba(0,0,0,0.06)' }
+        }
+    }
+}
+</script>
+<style>
+:root { --red:#C41230; --red-light:#FEF0F0; --bg:#F7F7F8; --white:#fff; --border:#EBEBEB; --text:#111; --muted:#888; }
+*{box-sizing:border-box;}
+body{font-family:'Tajawal',sans-serif;background:var(--bg);color:var(--text);margin:0;min-height:100vh;-webkit-tap-highlight-color:transparent;}
+.hide-scroll::-webkit-scrollbar{display:none;} .hide-scroll{-ms-overflow-style:none;scrollbar-width:none;}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .28s;}
+.modal-overlay.active{opacity:1;pointer-events:auto;}
+.modal-sheet{background:#fff;width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:24px 20px 36px;transform:translateY(30px);transition:transform .3s cubic-bezier(.32,.72,0,1);}
+.modal-overlay.active .modal-sheet{transform:translateY(0);}
+
+/* ── INPUTS ── */
+input,textarea,select{width:100%;background:var(--light,#F5F5F5);border:1.5px solid transparent;border-radius:12px;padding:11px 14px;font-size:14px;font-family:'Tajawal',sans-serif;color:var(--text);outline:none;transition:border .2s;}
+input:focus,textarea:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 0 3px rgba(196,18,48,.08);}
+input::placeholder,textarea::placeholder{color:#bbb;}
+
+/* ── BADGE ── */
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:99px;}
+.badge-gray{background:#e5e7eb;color:#555;}
+
+/* ── CHIP ── */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .18s;user-select:none;background:#F5F5F5;color:#555;}
+.chip.active{background:var(--red-light);color:var(--red);border-color:rgba(196,18,48,.25);}
+.chip:hover{background:#eee;}
+.chip.active:hover{background:#fde8eb;}
+
+/* ── PRODUCT ITEM ── */
+.prod-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;background:#fff;border:1.5px solid var(--border);transition:all .18s;cursor:pointer;}
+.prod-item:hover{border-color:#ddd;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+.prod-item.selected{border-color:var(--red);background:var(--red-light);}
+.prod-img{width:40px;height:40px;border-radius:8px;object-fit:cover;background:#f5f5f5;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.prod-img img{width:100%;height:100%;object-fit:cover;}
+
+/* ── GROUP CARD ── */
+.group-card{background:#fff;border-radius:14px;border:1.5px solid var(--border);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;transition:all .2s;cursor:pointer;}
+.group-card:hover{border-color:#ccc;box-shadow:0 4px 16px rgba(0,0,0,.07);}
+.group-card.active{border-color:var(--red);background:var(--red-light);}
+
+/* ── DRAG ── */
+.dragging{opacity:.4;border:2px dashed var(--red) !important;}
+.drag-over{border-top:2.5px solid var(--red);}
+
+/* ── INLINE EDIT ── */
+.inline-edit{border:1.5px solid transparent;border-radius:8px;padding:3px 8px;font-family:inherit;font-size:inherit;font-weight:inherit;background:transparent;outline:none;transition:all .18s;min-width:60px;}
+.inline-edit:focus{border-color:var(--red);background:#fff;box-shadow:0 0 0 3px rgba(196,18,48,.08);}
+
+/* ── TOAST ── */
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
+#toast.show{opacity:1;}
+
+/* ── TABS ── */
+.tab-btn{flex:1;padding:10px 0;font-size:13px;font-weight:700;border-radius:10px;border:none;background:transparent;cursor:pointer;font-family:'Tajawal',sans-serif;color:#888;transition:all .2s;}
+.tab-btn.active{background:#fff;color:var(--red);box-shadow:0 2px 8px rgba(0,0,0,.08);}
+
+/* ── EMPTY STATE ── */
+.empty{text-align:center;padding:48px 20px;color:#aaa;}
+.empty i{font-size:48px;display:block;margin-bottom:12px;opacity:.4;}
+
+/* ── LOADING ── */
+.skeleton{background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:10px;}
+@keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+
+/* ── BUTTONS ── */
+.btn-primary{background:var(--red);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:14px;font-weight:700;font-family:'Tajawal',sans-serif;cursor:pointer;transition:background .2s;width:100%;}
+.btn-primary:hover{background:#a50f28;}
+.btn-primary:active{transform:scale(.98);}
+.btn-secondary{background:#F5F5F5;color:#555;border:none;border-radius:12px;padding:12px 0;font-size:14px;font-weight:600;font-family:'Tajawal',sans-serif;cursor:pointer;transition:background .2s;width:100%;}
+.btn-secondary:hover{background:#ebebeb;}
+.btn-icon{width:34px;height:34px;border-radius:9px;border:none;background:#F5F5F5;color:#666;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s;flex-shrink:0;}
+.btn-icon:hover{background:#e8e8e8;}
+.btn-icon.danger:hover{background:#fee2e2;color:#ef4444;}
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<header style="background:#fff;border-bottom:1px solid #EBEBEB;position:sticky;top:0;z-index:100;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:36px;height:36px;background:var(--red);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <i class="ph-fill ph-folders" style="color:#fff;font-size:18px;"></i>
+        </div>
+        <div>
+            <div style="font-size:16px;font-weight:800;line-height:1.2;">Groups Manager</div>
+            <div style="font-size:11px;color:#888;font-weight:500;">إدارة مجموعات المنتجات</div>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn-icon" onclick="openGroupModal()" title="مجموعة جديدة" style="background:var(--red-light);color:var(--red);">
+            <i class="ph ph-folder-plus" style="font-size:18px;"></i>
+        </button>
+        <div id="save-indicator" style="display:none;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--red);">
+            <div style="width:6px;height:6px;background:var(--red);border-radius:50%;animation:pulse 1s infinite;"></div>
+            يحفظ...
+        </div>
+    </div>
+</header>
+
+<!-- ══ STATS BAR ══ -->
+<div id="stats-bar" style="background:#fff;border-bottom:1px solid #EBEBEB;padding:12px 20px;display:flex;gap:20px;overflow-x:auto;" class="hide-scroll">
+    <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+        <div style="width:30px;height:30px;background:#EFF6FF;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph-fill ph-folders" style="color:#3b82f6;font-size:14px;"></i>
+        </div>
+        <div>
+            <div id="stat-groups" style="font-size:16px;font-weight:800;line-height:1;">—</div>
+            <div style="font-size:10px;color:#888;font-weight:500;">مجموعة</div>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+        <div style="width:30px;height:30px;background:#F0FDF4;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph-fill ph-package" style="color:#22c55e;font-size:14px;"></i>
+        </div>
+        <div>
+            <div id="stat-linked" style="font-size:16px;font-weight:800;line-height:1;">—</div>
+            <div style="font-size:10px;color:#888;font-weight:500;">منتج مرتبط</div>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+        <div style="width:30px;height:30px;background:#FFF7ED;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <i class="ph ph-link-break" style="color:#f59e0b;font-size:14px;"></i>
+        </div>
+        <div>
+            <div id="stat-unlinked" style="font-size:16px;font-weight:800;line-height:1;">—</div>
+            <div style="font-size:10px;color:#888;font-weight:500;">بدون مجموعة</div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ TABS ══ -->
+<div style="padding:12px 16px 8px;background:#fff;border-bottom:1px solid #EBEBEB;">
+    <div style="background:#F5F5F5;border-radius:12px;padding:4px;display:flex;gap:2px;">
+        <button class="tab-btn active" id="tab-groups" onclick="switchTab('groups')">المجموعات</button>
+        <button class="tab-btn" id="tab-products" onclick="switchTab('products')">المنتجات</button>
+    </div>
+</div>
+
+<!-- ══ FILTERS ══ -->
+<div id="filter-bar" style="padding:10px 16px;background:#fff;border-bottom:1px solid #EBEBEB;display:flex;gap:8px;overflow-x:auto;" class="hide-scroll">
+    <div class="chip active" id="filter-all" onclick="setFilter('all')"><i class="ph ph-funnel"></i> الكل</div>
+    <div class="chip" id="filter-unlinked" onclick="setFilter('unlinked')"><i class="ph ph-link-break"></i> بدون مجموعة</div>
+    <div id="group-chips" style="display:contents;"></div>
+</div>
+
+<!-- ══ SEARCH ══ -->
+<div style="padding:10px 16px;background:#fff;border-bottom:1px solid #EBEBEB;">
+    <div style="display:flex;align-items:center;gap:10px;background:#F5F5F5;border-radius:12px;padding:9px 14px;">
+        <i class="ph ph-magnifying-glass" style="color:#aaa;font-size:16px;flex-shrink:0;"></i>
+        <input type="text" id="search-input" placeholder="ابحث عن منتج أو مجموعة..." oninput="onSearch(this.value)"
+            style="border:none;background:transparent;padding:0;margin:0;font-size:13px;flex:1;">
+    </div>
+</div>
+
+<!-- ══ MAIN CONTENT ══ -->
+<main style="padding:14px 16px 100px;" id="main-content">
+    <!-- Groups View -->
+    <div id="view-groups">
+        <div id="groups-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+    <!-- Products View -->
+    <div id="view-products" style="display:none;">
+        <div id="products-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+</main>
+
+<!-- ══ FAB ══ -->
+<button onclick="openGroupModal()" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;border:none;border-radius:999px;padding:14px 28px;font-size:14px;font-weight:700;font-family:'Tajawal',sans-serif;box-shadow:0 8px 28px rgba(196,18,48,.4);cursor:pointer;display:flex;align-items:center;gap:8px;z-index:50;transition:all .2s;" id="fab">
+    <i class="ph ph-folder-plus" style="font-size:18px;"></i>
+    مجموعة جديدة
+</button>
+
+<!-- ══ GROUP MODAL ══ -->
+<div class="modal-overlay" id="group-modal">
+    <div class="modal-sheet">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+            <h3 id="group-modal-title" style="font-size:17px;font-weight:800;margin:0;">مجموعة جديدة</h3>
+            <button class="btn-icon" onclick="closeModal('group-modal')"><i class="ph ph-x"></i></button>
+        </div>
+        <input type="hidden" id="group-id">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+            <input type="text" id="group-name-input" placeholder="اسم المجموعة *" style="font-size:15px;font-weight:600;">
+        </div>
+        <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="btn-primary" onclick="saveGroup()">حفظ</button>
+            <button class="btn-secondary" onclick="closeModal('group-modal')">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ ASSIGN MODAL ══ -->
+<div class="modal-overlay" id="assign-modal">
+    <div class="modal-sheet" style="padding-bottom:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div>
+                <h3 id="assign-modal-title" style="font-size:16px;font-weight:800;margin:0;"></h3>
+                <div style="font-size:12px;color:#888;margin-top:2px;" id="assign-modal-sub"></div>
+            </div>
+            <button class="btn-icon" onclick="closeModal('assign-modal')"><i class="ph ph-x"></i></button>
+        </div>
+        <!-- search inside modal -->
+        <div style="display:flex;align-items:center;gap:10px;background:#F5F5F5;border-radius:12px;padding:9px 14px;margin-bottom:12px;">
+            <i class="ph ph-magnifying-glass" style="color:#aaa;font-size:16px;flex-shrink:0;"></i>
+            <input type="text" id="assign-search" placeholder="ابحث في المنتجات..." oninput="filterAssignList(this.value)"
+                style="border:none;background:transparent;padding:0;margin:0;font-size:13px;flex:1;">
+        </div>
+        <!-- tabs: all / unlinked / linked to this -->
+        <div style="background:#F5F5F5;border-radius:10px;padding:4px;display:flex;gap:2px;margin-bottom:12px;">
+            <button class="tab-btn active" id="atab-all" onclick="setAssignTab('all')">كل المنتجات</button>
+            <button class="tab-btn" id="atab-current" onclick="setAssignTab('current')">في المجموعة</button>
+            <button class="tab-btn" id="atab-free" onclick="setAssignTab('free')">غير مرتبطة</button>
+        </div>
+        <div id="assign-list" style="max-height:45vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-bottom:20px;" class="hide-scroll"></div>
+        <div style="padding:16px 0 20px;border-top:1px solid #f0f0f0;margin-top:4px;display:flex;gap:10px;">
+            <button class="btn-primary" onclick="applyAssign()">تطبيق التغييرات</button>
+            <button class="btn-secondary" onclick="closeModal('assign-modal')">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ PRODUCT GROUP MODAL (for products view) ══ -->
+<div class="modal-overlay" id="prod-group-modal">
+    <div class="modal-sheet">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <h3 style="font-size:16px;font-weight:800;margin:0;" id="pgm-title">تغيير المجموعة</h3>
+            <button class="btn-icon" onclick="closeModal('prod-group-modal')"><i class="ph ph-x"></i></button>
+        </div>
+        <div id="pgm-options" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;" class="hide-scroll"></div>
+    </div>
+</div>
+
+<!-- ══ CONFIRM DELETE ══ -->
+<div class="modal-overlay" id="confirm-modal">
+    <div class="modal-sheet" style="text-align:center;">
+        <i class="ph ph-trash" style="font-size:44px;color:#ef4444;display:block;margin-bottom:12px;"></i>
+        <h3 id="confirm-title" style="font-size:17px;font-weight:800;margin:0 0 8px;"></h3>
+        <p id="confirm-msg" style="font-size:13px;color:#888;margin:0 0 24px;line-height:1.6;"></p>
+        <div style="display:flex;gap:10px;">
+            <button id="confirm-ok-btn" class="btn-primary" style="background:#ef4444;"></button>
+            <button class="btn-secondary" onclick="closeModal('confirm-modal')">إلغاء</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+<style>@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}</style>
+
+<script>
+// ══════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════
+const CFG = {
+    SUPABASE_URL:  'https://ysawzwtmodkqqbqoiojj.supabase.co',
+    SUPABASE_KEY:  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzYXd6d3Rtb2RrcXFicW9pb2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NjI0OTUsImV4cCI6MjA5MjAzODQ5NX0.g-dBDpHzMsP_0IQAKFxzWkKzc_I13bGUMeYNgcUmrKQ',
+    TABLE: 'products'
+};
+
+let _sb = null;
+let allProducts = [];
+let currentFilter = 'all';
+let currentTab = 'groups';
+let searchQ = '';
+
+// Assign modal state
+let assignGroupName = '';
+let assignSelected = new Set();
+let assignTab = 'all';
+let assignSearch = '';
+
+// ── INIT SUPABASE ──
+function initSB() {
+    _sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
+}
+
+// ══════════════════════════════════════
+// DATA HELPERS
+// ══════════════════════════════════════
+async function fetchProducts() {
+    if (!_sb) initSB();
+    try {
+        const { data, error } = await _sb.from(CFG.TABLE).select('id, name, image_url, group_name, price, barcode').order('name');
+        if (error) throw error;
+        return data || [];
+    } catch(e) {
+        showToast('خطأ في تحميل البيانات', 'error');
+        return [];
+    }
+}
+
+async function updateProductGroup(productId, groupName) {
+    if (!_sb) initSB();
+    const { error } = await _sb.from(CFG.TABLE).update({ group_name: groupName }).eq('id', productId);
+    if (error) throw error;
+}
+
+async function updateMultipleGroups(productIds, groupName) {
+    if (!productIds.length) return;
+    if (!_sb) initSB();
+    const { error } = await _sb.from(CFG.TABLE).update({ group_name: groupName }).in('id', productIds);
+    if (error) throw error;
+}
+
+function getGroups() {
+    const map = {};
+    allProducts.forEach(p => {
+        const g = p.group_name || '';
+        if (!g) return;
+        if (!map[g]) map[g] = [];
+        map[g].push(p);
+    });
+    return map;
+}
+
+function getGroupNames() {
+    return [...new Set(allProducts.map(p => p.group_name || '').filter(Boolean))].sort();
+}
+
+// ══════════════════════════════════════
+// LOAD
+// ══════════════════════════════════════
+async function load() {
+    renderSkeleton();
+    allProducts = await fetchProducts();
+    updateStats();
+    renderGroupChips();
+    renderCurrent();
+}
+
+function renderSkeleton() {
+    document.getElementById('groups-list').innerHTML = [1,2,3].map(() =>
+        `<div class="skeleton" style="height:64px;border-radius:14px;"></div>`
+    ).join('');
+}
+
+function updateStats() {
+    const groups = getGroupNames();
+    const linked = allProducts.filter(p => p.group_name).length;
+    const unlinked = allProducts.length - linked;
+    document.getElementById('stat-groups').textContent   = groups.length;
+    document.getElementById('stat-linked').textContent   = linked;
+    document.getElementById('stat-unlinked').textContent = unlinked;
+}
+
+// ══════════════════════════════════════
+// FILTERS & TABS
+// ══════════════════════════════════════
+function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tab-groups').classList.toggle('active', tab==='groups');
+    document.getElementById('tab-products').classList.toggle('active', tab==='products');
+    document.getElementById('view-groups').style.display   = tab==='groups'   ? '' : 'none';
+    document.getElementById('view-products').style.display = tab==='products' ? '' : 'none';
+    document.getElementById('filter-bar').style.display    = tab==='products' ? '' : 'none';
+    document.getElementById('fab').style.display           = tab==='groups'   ? '' : 'none';
+    renderCurrent();
+}
+
+function setFilter(f) {
+    currentFilter = f;
+    document.querySelectorAll('#filter-bar .chip').forEach(c => c.classList.remove('active'));
+    if (f === 'all')      document.getElementById('filter-all')?.classList.add('active');
+    else if (f === 'unlinked') document.getElementById('filter-unlinked')?.classList.add('active');
+    else {
+        // group chip
+        document.querySelectorAll('#group-chips .chip').forEach(c => {
+            if (c.dataset.g === f) c.classList.add('active');
+        });
+    }
+    renderCurrent();
+}
+
+function onSearch(q) {
+    searchQ = q.trim().toLowerCase();
+    renderCurrent();
+}
+
+function renderCurrent() {
+    if (currentTab === 'groups') renderGroups();
+    else renderProducts();
+}
+
+function renderGroupChips() {
+    const names = getGroupNames();
+    const wrap = document.getElementById('group-chips');
+    wrap.innerHTML = names.map(g =>
+        `<div class="chip${currentFilter===g?' active':''}" data-g="${g}" onclick="setFilter('${esc(g)}')">${g} <span class="badge badge-gray" style="${currentFilter===g?'background:var(--red);color:#fff;':''}">
+            ${allProducts.filter(p=>p.group_name===g).length}
+        </span></div>`
+    ).join('');
+}
+
+// ══════════════════════════════════════
+// RENDER GROUPS VIEW
+// ══════════════════════════════════════
+function renderGroups() {
+    const groupMap = getGroups();
+    const names = Object.keys(groupMap).sort();
+    const container = document.getElementById('groups-list');
+
+    if (!names.length) {
+        container.innerHTML = `<div class="empty"><i class="ph ph-folders"></i>لا توجد مجموعات بعد<br><span style="font-size:12px;color:#ccc;margin-top:6px;display:block;">اضغط "مجموعة جديدة" للبدء</span></div>`;
+        return;
+    }
+
+    let q = searchQ;
+    let filtered = names.filter(g => !q || g.toLowerCase().includes(q) ||
+        groupMap[g].some(p => p.name?.toLowerCase().includes(q)));
+
+    if (!filtered.length) {
+        container.innerHTML = `<div class="empty"><i class="ph ph-magnifying-glass"></i>لا نتائج للبحث</div>`;
+        return;
+    }
+
+    container.innerHTML = filtered.map(g => {
+        const prods = groupMap[g];
+        const imgs = prods.slice(0,3).map(p =>
+            p.image_url
+                ? `<img src="${p.image_url}" style="width:24px;height:24px;border-radius:6px;object-fit:cover;border:2px solid #fff;margin-right:-6px;">`
+                : `<div style="width:24px;height:24px;border-radius:6px;background:#f0f0f0;border:2px solid #fff;margin-right:-6px;display:flex;align-items:center;justify-content:center;"><i class="ph ph-package" style="font-size:10px;color:#aaa;"></i></div>`
+        ).join('');
+        return `
+        <div class="group-card" data-group="${esc(g)}" ondblclick="openGroupModal('${esc(g)}')">
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+                <div style="width:44px;height:44px;background:var(--red-light);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="ph-fill ph-folder-open" style="color:var(--red);font-size:22px;"></i>
+                </div>
+                <div style="min-width:0;flex:1;">
+                    <div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(g)}</div>
+                    <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                        <div style="display:flex;align-items:center;margin-left:4px;">${imgs}</div>
+                        <span style="font-size:12px;color:#888;">${prods.length} منتج</span>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                <button class="btn-icon" onclick="event.stopPropagation();openAssignModal('${esc(g)}')" title="إدارة المنتجات" style="color:var(--red);background:var(--red-light);">
+                    <i class="ph ph-arrows-left-right" style="font-size:16px;"></i>
+                </button>
+                <button class="btn-icon" onclick="event.stopPropagation();openGroupModal('${esc(g)}')" title="تعديل الاسم">
+                    <i class="ph ph-pencil-simple" style="font-size:15px;"></i>
+                </button>
+                <button class="btn-icon danger" onclick="event.stopPropagation();confirmDeleteGroup('${esc(g)}')" title="حذف">
+                    <i class="ph ph-trash" style="font-size:15px;"></i>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ══════════════════════════════════════
+// RENDER PRODUCTS VIEW
+// ══════════════════════════════════════
+function renderProducts() {
+    let items = [...allProducts];
+    const q = searchQ;
+    if (q) items = items.filter(p => (p.name||'').toLowerCase().includes(q) || (p.group_name||'').toLowerCase().includes(q) || (p.barcode||'').includes(q));
+    if (currentFilter === 'unlinked') items = items.filter(p => !p.group_name);
+    else if (currentFilter !== 'all') items = items.filter(p => p.group_name === currentFilter);
+
+    const container = document.getElementById('products-list');
+    if (!items.length) {
+        container.innerHTML = `<div class="empty"><i class="ph ph-package"></i>لا توجد منتجات${q?' لهذا البحث':''}</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(p => {
+        const hasGroup = !!p.group_name;
+        return `
+        <div class="prod-item" onclick="openProdGroupModal(${JSON.stringify(p.id)})">
+            <div class="prod-img">
+                ${p.image_url ? `<img src="${p.image_url}" alt="">` : `<i class="ph ph-package" style="font-size:18px;color:#ccc;"></i>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.name||'—')}</div>
+                <div style="font-size:11px;color:#888;margin-top:2px;">${p.price ? p.price+'$' : ''} ${p.barcode ? '· '+p.barcode : ''}</div>
+            </div>
+            ${hasGroup
+                ? `<span style="background:var(--red-light);color:var(--red);border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;flex-shrink:0;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.group_name)}</span>`
+                : `<span style="background:#f5f5f5;color:#aaa;border-radius:7px;padding:3px 9px;font-size:11px;font-weight:600;flex-shrink:0;">بدون مجموعة</span>`
+            }
+            <i class="ph ph-caret-left" style="font-size:14px;color:#ccc;flex-shrink:0;"></i>
+        </div>`;
+    }).join('');
+}
+
+// ══════════════════════════════════════
+// GROUP MODAL (CREATE / RENAME)
+// ══════════════════════════════════════
+function openGroupModal(existingName) {
+    const isEdit = !!existingName;
+    document.getElementById('group-modal-title').textContent = isEdit ? 'تعديل اسم المجموعة' : 'مجموعة جديدة';
+    document.getElementById('group-id').value = existingName || '';
+    document.getElementById('group-name-input').value = existingName || '';
+    openModal('group-modal');
+    setTimeout(() => document.getElementById('group-name-input').focus(), 300);
+}
+
+async function saveGroup() {
+    const oldName = document.getElementById('group-id').value;
+    const newName = document.getElementById('group-name-input').value.trim();
+    if (!newName) { showToast('يرجى إدخال اسم المجموعة', 'error'); return; }
+
+    showSaving();
+    try {
+        if (oldName && oldName !== newName) {
+            // Rename: update all products that have oldName
+            const ids = allProducts.filter(p => p.group_name === oldName).map(p => p.id);
+            if (ids.length) await updateMultipleGroups(ids, newName);
+            allProducts.forEach(p => { if (p.group_name === oldName) p.group_name = newName; });
+            showToast('تم تعديل الاسم ✓');
+        } else if (!oldName) {
+            // New group: no products yet, just create entry in UI
+            allProducts._pendingGroups = allProducts._pendingGroups || [];
+            // Group exists when a product is assigned to it; for now just reflect in chips
+            showToast('تم إنشاء المجموعة ✓ — أضف منتجات إليها');
+            // We add a phantom entry so it shows in the list immediately
+            if (!allProducts.some(p => p.group_name === newName)) {
+                // Phantom product just for UI display — will be cleaned on reload
+                allProducts._phantom = allProducts._phantom || [];
+                allProducts._phantom.push(newName);
+            }
+        }
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+
+    closeModal('group-modal');
+    updateStats();
+    renderGroupChips();
+    renderCurrent();
+}
+
+// ══════════════════════════════════════
+// DELETE GROUP
+// ══════════════════════════════════════
+function confirmDeleteGroup(groupName) {
+    const count = allProducts.filter(p => p.group_name === groupName).length;
+    document.getElementById('confirm-title').textContent = `حذف مجموعة "${groupName}"`;
+    document.getElementById('confirm-msg').textContent =
+        count ? `سيتم إزالة الارتباط عن ${count} منتج. المنتجات لن تُحذف.`
+               : 'المجموعة فارغة — ستُحذف فوراً.';
+    document.getElementById('confirm-ok-btn').textContent = 'حذف المجموعة';
+    document.getElementById('confirm-ok-btn').onclick = () => deleteGroup(groupName);
+    openModal('confirm-modal');
+}
+
+async function deleteGroup(groupName) {
+    closeModal('confirm-modal');
+    showSaving();
+    try {
+        const ids = allProducts.filter(p => p.group_name === groupName).map(p => p.id);
+        if (ids.length) await updateMultipleGroups(ids, '');
+        allProducts.forEach(p => { if (p.group_name === groupName) p.group_name = ''; });
+        showToast(`تم حذف "${groupName}" ✓`);
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+    if (currentFilter === groupName) setFilter('all');
+    updateStats();
+    renderGroupChips();
+    renderCurrent();
+}
+
+// ══════════════════════════════════════
+// ASSIGN MODAL
+// ══════════════════════════════════════
+function openAssignModal(groupName) {
+    assignGroupName = groupName;
+    assignTab = 'all';
+    assignSearch = '';
+    // Pre-select currently linked products
+    assignSelected = new Set(allProducts.filter(p => p.group_name === groupName).map(p => p.id));
+    document.getElementById('assign-modal-title').textContent = groupName;
+    const count = assignSelected.size;
+    document.getElementById('assign-modal-sub').textContent = `${count} منتج في المجموعة حالياً`;
+    document.getElementById('assign-search').value = '';
+    setAssignTab('all');
+    openModal('assign-modal');
+}
+
+function setAssignTab(tab) {
+    assignTab = tab;
+    ['all','current','free'].forEach(t => {
+        document.getElementById('atab-'+t)?.classList.toggle('active', t===tab);
+    });
+    renderAssignList();
+}
+
+function filterAssignList(q) {
+    assignSearch = q.trim().toLowerCase();
+    renderAssignList();
+}
+
+function renderAssignList() {
+    let items = [...allProducts];
+    if (assignSearch) items = items.filter(p => (p.name||'').toLowerCase().includes(assignSearch));
+    if (assignTab === 'current') items = items.filter(p => assignSelected.has(p.id));
+    else if (assignTab === 'free') items = items.filter(p => !p.group_name || p.group_name === assignGroupName);
+
+    const container = document.getElementById('assign-list');
+    if (!items.length) {
+        container.innerHTML = `<div class="empty" style="padding:28px 0;"><i class="ph ph-package"></i>لا توجد منتجات</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(p => {
+        const isSelected = assignSelected.has(p.id);
+        return `
+        <div class="prod-item${isSelected?' selected':''}" onclick="toggleAssign(${JSON.stringify(p.id)},this)">
+            <div class="prod-img">
+                ${p.image_url ? `<img src="${p.image_url}" alt="">` : `<i class="ph ph-package" style="font-size:18px;color:#ccc;"></i>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.name||'—')}</div>
+                ${p.group_name && p.group_name !== assignGroupName
+                    ? `<div style="font-size:11px;color:#f59e0b;margin-top:2px;">في مجموعة: ${esc(p.group_name)}</div>`
+                    : `<div style="font-size:11px;color:#aaa;margin-top:2px;">${p.price ? p.price+'$' : '—'}</div>`
+                }
+            </div>
+            <div style="width:22px;height:22px;border-radius:6px;border:2px solid ${isSelected?'var(--red)':'#d1d5db'};background:${isSelected?'var(--red)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s;">
+                ${isSelected ? '<i class="ph-fill ph-check" style="font-size:13px;color:#fff;"></i>' : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleAssign(id, el) {
+    if (assignSelected.has(id)) assignSelected.delete(id);
+    else assignSelected.add(id);
+    el.classList.toggle('selected', assignSelected.has(id));
+    const cb = el.querySelector('div[style*="border-radius:6px"]');
+    if (cb) {
+        const sel = assignSelected.has(id);
+        cb.style.borderColor = sel ? 'var(--red)' : '#d1d5db';
+        cb.style.background  = sel ? 'var(--red)'  : 'transparent';
+        cb.innerHTML = sel ? '<i class="ph-fill ph-check" style="font-size:13px;color:#fff;"></i>' : '';
+    }
+    document.getElementById('assign-modal-sub').textContent = `${assignSelected.size} منتج محدد`;
+}
+
+async function applyAssign() {
+    showSaving();
+    closeModal('assign-modal');
+    try {
+        // Products to ADD (selected but not currently in group)
+        const toAdd = allProducts.filter(p => assignSelected.has(p.id) && p.group_name !== assignGroupName).map(p => p.id);
+        // Products to REMOVE (not selected but currently in group)
+        const toRemove = allProducts.filter(p => !assignSelected.has(p.id) && p.group_name === assignGroupName).map(p => p.id);
+
+        if (toAdd.length) await updateMultipleGroups(toAdd, assignGroupName);
+        if (toRemove.length) await updateMultipleGroups(toRemove, '');
+
+        // Update local state
+        allProducts.forEach(p => {
+            if (toAdd.includes(p.id))    p.group_name = assignGroupName;
+            if (toRemove.includes(p.id)) p.group_name = '';
+        });
+
+        showToast(`تم التحديث ✓ (${toAdd.length} أُضيف, ${toRemove.length} أُزيل)`);
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+    updateStats();
+    renderGroupChips();
+    renderCurrent();
+}
+
+// ══════════════════════════════════════
+// PRODUCT → CHANGE GROUP MODAL
+// ══════════════════════════════════════
+let _pgmProductId = null;
+function openProdGroupModal(productId) {
+    _pgmProductId = productId;
+    const prod = allProducts.find(p => p.id === productId);
+    if (!prod) return;
+    document.getElementById('pgm-title').textContent = prod.name || 'تغيير المجموعة';
+    const groups = getGroupNames();
+    const opts = document.getElementById('pgm-options');
+    opts.innerHTML = `
+        <div onclick="setProdGroup('')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;cursor:pointer;background:${!prod.group_name?'var(--red-light)':'#f5f5f5'};border:1.5px solid ${!prod.group_name?'rgba(196,18,48,.3)':'transparent'};margin-bottom:4px;">
+            <div style="width:34px;height:34px;background:#e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="ph ph-link-break" style="color:#aaa;font-size:16px;"></i>
+            </div>
+            <span style="font-size:14px;font-weight:600;color:${!prod.group_name?'var(--red)':'#555'};">بدون مجموعة</span>
+            ${!prod.group_name ? '<i class="ph-fill ph-check-circle" style="color:var(--red);font-size:18px;margin-right:auto;"></i>' : ''}
+        </div>
+        ${groups.map(g => `
+        <div onclick="setProdGroup('${esc(g)}')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;cursor:pointer;background:${prod.group_name===g?'var(--red-light)':'#f5f5f5'};border:1.5px solid ${prod.group_name===g?'rgba(196,18,48,.3)':'transparent'};">
+            <div style="width:34px;height:34px;background:var(--red-light);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="ph-fill ph-folder-open" style="color:var(--red);font-size:16px;"></i>
+            </div>
+            <span style="font-size:14px;font-weight:600;color:${prod.group_name===g?'var(--red)':'#333'};">${esc(g)}</span>
+            <span style="margin-right:auto;font-size:11px;color:#aaa;">${allProducts.filter(p=>p.group_name===g).length} منتج</span>
+            ${prod.group_name===g ? '<i class="ph-fill ph-check-circle" style="color:var(--red);font-size:18px;"></i>' : ''}
+        </div>`).join('')}
+    `;
+    openModal('prod-group-modal');
+}
+
+async function setProdGroup(groupName) {
+    const prod = allProducts.find(p => p.id === _pgmProductId);
+    if (!prod) return;
+    closeModal('prod-group-modal');
+    showSaving();
+    try {
+        await updateProductGroup(prod.id, groupName);
+        prod.group_name = groupName;
+        showToast(groupName ? `تم نقل إلى "${groupName}" ✓` : 'تم إزالة الارتباط ✓');
+    } catch(e) {
+        showToast('خطأ: ' + e.message, 'error');
+    } finally {
+        hideSaving();
+    }
+    updateStats();
+    renderGroupChips();
+    renderCurrent();
+}
+
+// ══════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════
+function openModal(id)  { document.getElementById(id)?.classList.add('active'); document.body.style.overflow='hidden'; }
+function closeModal(id) { document.getElementById(id)?.classList.remove('active'); document.body.style.overflow=''; }
+
+function showSaving() { document.getElementById('save-indicator').style.display = 'flex'; }
+function hideSaving()  { document.getElementById('save-indicator').style.display = 'none'; }
+
+function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = type === 'error' ? '#ef4444' : '#111';
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function esc(str) {
+    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+    initSB();
+    await load();
+    // Default: show groups tab, no filter bar
+    document.getElementById('filter-bar').style.display = 'none';
+    document.getElementById('fab').style.display = '';
+});
+</script>
+</body>
+</html>
